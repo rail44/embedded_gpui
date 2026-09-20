@@ -460,7 +460,7 @@ fn serialize_scene(scene: &Scene, scale_factor: f32, atlas: &PluginAtlas) -> wit
                 content_mask: wire_bounds(underline.content_mask.bounds, inverse_scale),
                 color: wire_hsla(underline.color),
                 thickness: underline.thickness.0 * inverse_scale,
-                wavy: underline.wavy != 0,
+                wavy: wire_bool(underline.wavy),
             }),
         });
     }
@@ -545,7 +545,7 @@ fn serialize_scene(scene: &Scene, scale_factor: f32, atlas: &PluginAtlas) -> wit
                                 bottom_right: sprite.corner_radii.bottom_right.0 * inverse_scale,
                                 bottom_left: sprite.corner_radii.bottom_left.0 * inverse_scale,
                             },
-                            grayscale: sprite.grayscale,
+                            grayscale: wire_bool(sprite.grayscale),
                             opacity: sprite.opacity,
                         }),
                     });
@@ -654,6 +654,13 @@ fn wire_bounds(value: Bounds<ScaledPixels>, inverse_scale: f32) -> wit::Bounds {
             height: value.size.height.0 * inverse_scale,
         },
     }
+}
+
+/// gpui-pre stores the GPU-facing scene flags as `PaddedBool32` (a `u32` with no
+/// public accessor), so equality against a known value is the only way back to a
+/// `bool` from outside the crate.
+fn wire_bool(value: gpui::PaddedBool32) -> bool {
+    value == gpui::PaddedBool32::from(true)
 }
 
 fn wire_hsla(color: gpui::Hsla) -> wit::Hsla {

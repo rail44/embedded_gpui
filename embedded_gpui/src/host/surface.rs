@@ -345,8 +345,13 @@ fn paint_primitive(
             let render_image = render_image.clone();
             let grayscale = image.grayscale;
             window.with_content_mask(Some(ContentMask { bounds: mask }), |window| {
+                // gpui-pre's `paint_image` takes an extra `image_bounds` that positions
+                // and scales the image inside `bounds`; the visible region is their
+                // intersection. The guest display list carries a single rect per image
+                // primitive, so passing it for both reproduces the fill-`bounds`
+                // behaviour of the signature this call was written against.
                 if let Err(error) =
-                    window.paint_image(bounds, corner_radii, render_image, 0, grayscale)
+                    window.paint_image(bounds, bounds, corner_radii, render_image, 0, grayscale)
                 {
                     log::warn!("embedded_gpui: failed to paint image: {error:#}");
                 }

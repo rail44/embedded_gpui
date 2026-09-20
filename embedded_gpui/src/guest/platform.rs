@@ -13,6 +13,7 @@ use gpui::{
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -117,7 +118,7 @@ impl Platform for PluginPlatform {
 
     fn quit(&self) {}
 
-    fn restart(&self, _binary_path: Option<PathBuf>) {}
+    fn restart(&self, _binary_path: Option<PathBuf>, _arguments: Vec<OsString>) {}
 
     fn activate(&self, _ignoring_other_apps: bool) {}
 
@@ -201,7 +202,7 @@ impl Platform for PluginPlatform {
 
     fn open_with_system(&self, _path: &Path) {}
 
-    fn on_quit(&self, _callback: Box<dyn FnMut()>) {}
+    fn on_quit(&self, _callback: Box<dyn FnMut() -> bool>) {}
 
     fn on_reopen(&self, _callback: Box<dyn FnMut()>) {}
 
