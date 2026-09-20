@@ -15,6 +15,23 @@ use crate::surface::{
 };
 use crate::{PluginImages, Ref, Remote, bindings};
 
+/// What a guest drew, counted by primitive kind. Produced by
+/// [`Surface::scene_summary`].
+///
+/// `glyph_ids` is in ascending paint order. The ids are whatever the host's
+/// [`gpui::PlatformTextSystem`] assigned, so a text system that maps one
+/// character to one id makes the rendered text readable from here.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SceneSummary {
+    pub quads: usize,
+    pub shadows: usize,
+    pub underlines: usize,
+    pub glyphs: usize,
+    pub paths: usize,
+    pub images: usize,
+    pub glyph_ids: Vec<u32>,
+}
+
 /// A place pixels go: one slot in the host's element tree, as a GPUI entity.
 ///
 /// Create one, share it with a plugin host (`host.share(&surface, cx)` gives the
@@ -54,6 +71,30 @@ impl Surface {
     /// Whether a display list has arrived since the last attach.
     pub fn has_scene(&self) -> bool {
         self.display_list.is_some()
+    }
+
+    /// A read-only summary of the cached display list, for tests and tooling.
+    /// Painting reads the list directly; this is the only way to assert on what
+    /// a guest drew without a window on screen.
+    pub fn scene_summary(&self) -> Option<SceneSummary> {
+        let (list, _) = self.display_list.as_ref()?;
+        let mut summary = SceneSummary::default();
+        let mut ordered: Vec<&bindings::PlacedPrimitive> = list.primitives.iter().collect();
+        ordered.sort_by_key(|placed| placed.order);
+        for placed in ordered {
+            match &placed.prim {
+                bindings::Primitive::Quad(_) => summary.quads += 1,
+                bindings::Primitive::Shadow(_) => summary.shadows += 1,
+                bindings::Primitive::Underline(_) => summary.underlines += 1,
+                bindings::Primitive::Path(_) => summary.paths += 1,
+                bindings::Primitive::Image(_) => summary.images += 1,
+                bindings::Primitive::Glyph(glyph) => {
+                    summary.glyphs += 1;
+                    summary.glyph_ids.push(glyph.glyph_id);
+                }
+            }
+        }
+        Some(summary)
     }
 
     pub(crate) fn set_scene(

@@ -33,7 +33,7 @@ use bindings::{Plugin, PluginImports};
 
 mod surface;
 
-pub use surface::Surface;
+pub use surface::{SceneSummary, Surface};
 
 /// The data carried on the wasmtime `Store`: the WASI sandbox and the text system the
 /// synchronous shaping imports answer from.
