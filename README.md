@@ -1,5 +1,12 @@
 # embedded_gpui
 
+> **Fork note.** This `gpui-pre` branch retargets gpui to the crates.io
+> `gpui-pre` snapshot family, so an embedder can share one gpui with other
+> crates built against it instead of pulling a second gpui from the zed
+> repository. On top of that: the API follow-ups those snapshots require,
+> and a read-only `Surface::scene_summary()` for windowless tests.
+> Upstream is [zed-industries/embedded_gpui](https://github.com/zed-industries/embedded_gpui).
+
 **Experimental.** GPUI running *inside* a Wasm component, embedded back into a
 native GPUI application. A plugin is an ordinary GPUI program — entities,
 elements, flexbox layout, input handlers, async tasks — compiled to
