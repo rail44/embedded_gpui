@@ -101,6 +101,22 @@ fn settle(cx: &mut TestAppContext) {
     cx.executor().run_until_parked();
 }
 
+/// [`settle`] with a step budget: whether the executor ran out of work within
+/// `max_steps`, rather than hanging when something keeps handing itself more.
+fn settles_within(max_steps: usize, cx: &mut TestAppContext) -> bool {
+    for _ in 0..10 {
+        let mut steps = 0;
+        while cx.executor().tick() {
+            steps += 1;
+            if steps >= max_steps {
+                return false;
+            }
+        }
+        cx.executor().advance_clock(Duration::from_millis(100));
+    }
+    true
+}
+
 /// Call one of the plugin root's capability-returning methods: the receipt resolves
 /// with a live, connected `Remote` — the whole discovery story in one await.
 macro_rules! from_root {
@@ -591,13 +607,16 @@ async fn test_views_are_objects(cx: &mut TestAppContext) {
         .expect("the guest attached a view");
 
     // Geometry is a method call on the view (layout would make this call; tests drive
-    // it directly), and the guest renders at that size: a display list comes back.
+    // it directly), and the guest renders at that size on the next host frame (rendering
+    // the surface would drive it; tests drive it directly): a display list comes back.
     let geometry = Geometry {
         width: 200.,
         height: 100.,
         scale_factor: 2.,
     };
     cx.update(|cx| view.resize(geometry, cx));
+    settle(cx);
+    surface.update(cx, |surface, cx| surface.drive_frame(cx));
     settle(cx);
     let seen = cx.update(|cx| probe.last_geometry(cx));
     settle(cx);
@@ -671,6 +690,8 @@ async fn test_reattaching_a_surface_replaces_its_view(cx: &mut TestAppContext) {
     );
     cx.update(|cx| second_view.resize(geometry, cx));
     settle(cx);
+    surface.update(cx, |surface, cx| surface.drive_frame(cx));
+    settle(cx);
     let seen = cx.update(|cx| second.last_geometry(cx));
     settle(cx);
     assert_eq!(seen.await.expect("geometry"), Some(geometry));
@@ -687,6 +708,161 @@ async fn test_reattaching_a_surface_replaces_its_view(cx: &mut TestAppContext) {
         !first_alive.await.expect("alive"),
         "the replaced view is gone"
     );
+}
+
+/// Answer frame requests until the guest stops asking; a static view must stop within a
+/// couple of frames.
+fn drain_frames(surface: &Entity<Surface>, cx: &mut TestAppContext) {
+    for _ in 0..2 {
+        if !surface.update(cx, |surface, cx| surface.drive_frame(cx)) {
+            return;
+        }
+        settle(cx);
+    }
+    assert!(
+        !surface.update(cx, |surface, cx| surface.drive_frame(cx)),
+        "a static view kept asking for frames"
+    );
+}
+
+/// `App::open_window` draws the new window once before returning, independent of any
+/// frame request.
+const OPEN_WINDOW_DRAWS: u32 = 1;
+
+#[gpui::test]
+async fn test_animated_view_draws_once_per_host_frame(cx: &mut TestAppContext) {
+    let host = setup(cx);
+    let surface = cx.new(Surface::new);
+    let root = cx.update(|cx| host.root::<TestPlugin>(cx));
+    let probe = cx.update(|cx| root.mount_animated(host.share(&surface, cx), cx));
+    settle(cx);
+    let probe = probe.await.expect("mount_animated");
+    let view = surface
+        .read_with(cx, |surface, _| surface.view().cloned())
+        .expect("the guest attached a view");
+
+    let renders = |cx: &mut TestAppContext| {
+        let receipt = cx.update(|cx| probe.renders(cx));
+        settles_within(10_000, cx);
+        receipt
+    };
+
+    cx.update(|cx| {
+        view.resize(
+            Geometry {
+                width: 200.,
+                height: 100.,
+                scale_factor: 1.,
+            },
+            cx,
+        )
+    });
+    assert!(
+        settles_within(10_000, cx),
+        "the guest did not settle after resize"
+    );
+
+    // Input makes the guest report cursor styles, which is what used to keep it turning.
+    cx.update(|cx| {
+        view.mouse(
+            MouseEvent::Move(embedded_gpui::surface::MouseMoveEvent {
+                position: Point { x: 10., y: 10. },
+                pressed_button: None,
+                modifiers: Modifiers::default(),
+            }),
+            cx,
+        )
+    });
+    let settled = settles_within(10_000, cx);
+    let after_input = renders(cx).await.expect("renders");
+    assert!(
+        settled,
+        "the guest kept drawing after input: {after_input} renders"
+    );
+    // gpui draws once inside `open_window` itself; beyond that, nothing is drawn while
+    // the host renders no frame.
+    assert_eq!(
+        after_input, OPEN_WINDOW_DRAWS,
+        "the guest drew without a host frame: the surface was never rendered"
+    );
+
+    // Each host frame yields exactly one guest frame, and the animation asks for the
+    // next one every time.
+    for frame in 1..=3 {
+        let sent = surface.update(cx, |surface, cx| surface.drive_frame(cx));
+        assert!(sent, "the animated guest did not ask for frame {frame}");
+        assert!(
+            settles_within(10_000, cx),
+            "the guest did not settle after frame {frame}"
+        );
+        assert_eq!(
+            renders(cx).await.expect("renders"),
+            OPEN_WINDOW_DRAWS + frame
+        );
+        assert!(surface.read_with(cx, |surface, _| surface.has_scene()));
+    }
+
+    // One request, one frame: driving again before the guest asks again sends nothing.
+    let sent = surface.update(cx, |surface, cx| surface.drive_frame(cx));
+    assert!(sent);
+    let sent_again = surface.update(cx, |surface, cx| surface.drive_frame(cx));
+    assert!(!sent_again, "one request, one frame");
+}
+
+#[gpui::test]
+async fn test_static_view_stops_asking_for_frames(cx: &mut TestAppContext) {
+    let host = setup(cx);
+    let surface = cx.new(Surface::new);
+    let root = cx.update(|cx| host.root::<TestPlugin>(cx));
+    let probe = cx.update(|cx| root.mount(host.share(&surface, cx), cx));
+    settle(cx);
+    let probe = probe.await.expect("mount");
+    let view = surface
+        .read_with(cx, |surface, _| surface.view().cloned())
+        .expect("the guest attached a view");
+    cx.update(|cx| {
+        view.resize(
+            Geometry {
+                width: 200.,
+                height: 100.,
+                scale_factor: 1.,
+            },
+            cx,
+        )
+    });
+    settle(cx);
+
+    // The window was dirty before it was measured; that demand survives until a frame
+    // is actually drawn.
+    assert!(surface.update(cx, |surface, cx| surface.drive_frame(cx)));
+    settle(cx);
+    assert!(surface.read_with(cx, |surface, _| surface.has_scene()));
+    let renders = cx.update(|cx| probe.renders(cx));
+    settle(cx);
+    assert_eq!(renders.await.expect("renders"), OPEN_WINDOW_DRAWS + 1);
+
+    // Nothing changed, so the guest goes quiet: gpui may leave frame demand behind a draw
+    // for one more frame, which draws nothing, and then asks for no more.
+    drain_frames(&surface, cx);
+    let renders = cx.update(|cx| probe.renders(cx));
+    settle(cx);
+    assert_eq!(renders.await.expect("renders"), OPEN_WINDOW_DRAWS + 1);
+
+    // A click that notifies asks for exactly one more frame.
+    let click = MouseButtonEvent {
+        button: MouseButton::Left,
+        position: Point { x: 10., y: 10. },
+        modifiers: Modifiers::default(),
+        click_count: 1,
+    };
+    cx.update(|cx| view.mouse(MouseEvent::Down(click), cx));
+    settle(cx);
+    assert!(surface.update(cx, |surface, cx| surface.drive_frame(cx)));
+    settle(cx);
+    drain_frames(&surface, cx);
+    let renders = cx.update(|cx| probe.renders(cx));
+    settle(cx);
+    assert_eq!(renders.await.expect("renders"), OPEN_WINDOW_DRAWS + 2);
 }
 
 #[gpui::test]
@@ -735,6 +911,7 @@ async fn test_interfaces_describe_themselves(_cx: &mut TestAppContext) {
             "chameleon",
             "ping_host",
             "mount",
+            "mount_animated",
             "spin"
         ]
     );

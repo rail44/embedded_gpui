@@ -50,12 +50,22 @@ pub struct PluginWindowState {
     /// GPUI dropped its `PlatformWindow` (the window was removed): nothing may be
     /// dispatched to this state again, and the platform forgets it on its next pump.
     closed: Cell<bool>,
+    /// GPUI has frame demand for this window (it became dirty, or a next-frame callback
+    /// is queued). Set through `frame_waker`/`schedule_frame`; cleared only when a frame
+    /// is actually pumped, because GPUI wakes once per transition, not per pump.
+    frame_wanted: Rc<Cell<bool>>,
+    /// A `request_frame` went to the host and its `frame` has not arrived yet.
+    frame_requested: Cell<bool>,
+    /// The host's `frame` arrived this turn: the pump may draw.
+    frame_received: Cell<bool>,
 }
 
 /// One host-driven window event, applied by the pump.
 pub enum WindowEvent {
     Resize(Size<Pixels>, f32),
     Input(PlatformInput),
+    /// A host display frame: the window may draw once.
+    Frame,
 }
 
 impl PluginWindowState {
@@ -78,6 +88,9 @@ impl PluginWindowState {
             pending: RefCell::new(Vec::new()),
             measured: Cell::new(false),
             closed: Cell::new(false),
+            frame_wanted: Rc::default(),
+            frame_requested: Cell::new(false),
+            frame_received: Cell::new(false),
         }
     }
 
@@ -100,8 +113,22 @@ impl PluginWindowState {
             match event {
                 WindowEvent::Resize(size, scale_factor) => self.resized(size, scale_factor),
                 WindowEvent::Input(input) => self.dispatch_input(input),
+                WindowEvent::Frame => {
+                    self.frame_requested.set(false);
+                    self.frame_received.set(true);
+                }
             }
         }
+    }
+
+    /// Whether this window should ask the host for a frame now: GPUI has frame demand
+    /// and no request is already outstanding. Marks the request outstanding.
+    pub fn take_frame_request(&self) -> bool {
+        if self.closed.get() || !self.frame_wanted.get() || self.frame_requested.get() {
+            return false;
+        }
+        self.frame_requested.set(true);
+        true
     }
 
     pub fn surface(&self) -> &Remote<SurfaceApi> {
@@ -112,15 +139,22 @@ impl PluginWindowState {
         self.surface.reference().entity_id()
     }
 
-    /// Give GPUI a chance to redraw this window. GPUI's registered frame callback checks the
-    /// window's dirty bit itself, so calling this on a clean window is cheap.
+    /// Give GPUI a chance to redraw this window, if the host delivered a frame this turn.
+    /// GPUI's registered frame callback runs next-frame callbacks and checks the window's
+    /// dirty bit itself.
+    ///
+    /// A delivered frame is kept for a later turn while the window is unmeasured, and the
+    /// demand flag is cleared only when the callback really runs (it re-sets the flag
+    /// through the waker if demand remains).
     ///
     /// The callback is temporarily moved out so that it can freely re-enter this window's
     /// other methods without hitting the `callbacks` RefCell.
     pub fn pump_frame(&self) {
-        if !self.measured.get() || self.closed.get() {
+        if !self.frame_received.get() || !self.measured.get() || self.closed.get() {
             return;
         }
+        self.frame_received.set(false);
+        self.frame_wanted.set(false);
         let callback = self.callbacks.borrow_mut().request_frame.take();
         if let Some(mut callback) = callback {
             callback(RequestFrameOptions {
@@ -316,6 +350,17 @@ impl PlatformWindow for PluginWindow {
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {
         self.state.callbacks.borrow_mut().request_frame = Some(callback);
+    }
+
+    // Frames are demand-driven: GPUI reports demand here, the pump turns it into one
+    // `request_frame` to the host, and the window draws when the host's `frame` arrives.
+    fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
+        let frame_wanted = self.state.frame_wanted.clone();
+        Some(Rc::new(move || frame_wanted.set(true)))
+    }
+
+    fn schedule_frame(&self) {
+        self.state.frame_wanted.set(true);
     }
 
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> DispatchEventResult>) {

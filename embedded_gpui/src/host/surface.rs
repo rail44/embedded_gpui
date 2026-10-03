@@ -49,6 +49,8 @@ pub struct Surface {
     geometry: Option<Geometry>,
     last_origin: Point<Pixels>,
     focus_handle: FocusHandle,
+    /// The guest asked for a frame and has not been sent one yet.
+    frame_requested: bool,
 }
 
 impl Surface {
@@ -60,7 +62,26 @@ impl Surface {
             geometry: None,
             last_origin: Point::default(),
             focus_handle: cx.focus_handle(),
+            frame_requested: false,
         }
+    }
+
+    /// Answer a pending `request_frame` by sending the attached view its `frame`.
+    /// Returns whether a frame was sent; with no view attached yet the request is kept.
+    ///
+    /// Rendering the surface calls this once per host frame, which is what paces the
+    /// guest. A host that drives a surface without rendering it (a windowless test or
+    /// tool) calls it directly as its frame clock.
+    pub fn drive_frame(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.frame_requested {
+            return false;
+        }
+        let Some(view) = &self.view else {
+            return false;
+        };
+        self.frame_requested = false;
+        view.frame(cx);
+        true
     }
 
     /// The view currently drawing here, if a guest has attached one.
@@ -162,6 +183,11 @@ impl SurfaceApi for Surface {
         self.cursor = Some(cursor.to_gpui());
         cx.notify();
     }
+
+    fn request_frame(&mut self, cx: &mut Context<Self>) {
+        self.frame_requested = true;
+        cx.notify();
+    }
 }
 
 impl Render for Surface {
@@ -215,6 +241,8 @@ impl Render for Surface {
                         prepaint_entity.update(cx, |this, cx| {
                             this.last_origin = bounds.origin;
                             this.measured(bounds.size, scale, cx);
+                            // After any resize, so the frame lands at the new size.
+                            this.drive_frame(cx);
                         });
                         bounds
                     },

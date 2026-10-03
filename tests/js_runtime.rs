@@ -64,6 +64,13 @@ fn settle(cx: &mut TestAppContext) {
     cx.executor().run_until_parked();
 }
 
+/// Stand in for the host rendering the surface: answer the guest's frame request, as
+/// one host display frame would, and let the guest draw.
+fn host_frame(surface: &Entity<Surface>, cx: &mut TestAppContext) {
+    surface.update(cx, |surface, cx| surface.drive_frame(cx));
+    settle(cx);
+}
+
 fn setup_with_options(
     options: PluginOptions,
     cx: &mut TestAppContext,
@@ -199,6 +206,7 @@ async fn test_script_renders_a_view_and_receives_input(cx: &mut TestAppContext) 
         )
     });
     settle(cx);
+    host_frame(&surface, cx);
     assert!(
         surface.read_with(cx, |surface, _| surface.has_scene()),
         "the JS view rendered a display list"
@@ -249,6 +257,7 @@ async fn test_reload_starts_clean_and_replays_the_host(cx: &mut TestAppContext) 
         );
     });
     settle(cx);
+    host_frame(&surface, cx);
     cx.update(|cx| {
         first_view.mouse(MouseEvent::Down(click.clone()), cx);
         first_view.mouse(MouseEvent::Up(click), cx);
@@ -288,6 +297,7 @@ async fn test_reload_starts_clean_and_replays_the_host(cx: &mut TestAppContext) 
         );
     });
     settle(cx);
+    host_frame(&surface, cx);
     assert!(
         surface.read_with(cx, |surface, _| surface.has_scene()),
         "the replayed view rendered on the surface"

@@ -145,18 +145,30 @@ the rule for it is the same as for every plugin: events and notifies, not animat
    ascending `order` inside `Window::paint_layer` calls so each group gets a fresh host
    order, preserving guest stacking (including guest-side deferred draws / overlays).
 7. **Input and geometry are method calls** on the guest-homed `ViewApi` object a
-   surface has attached: `resize`, `mouse`, `key` (slot-relative logical coordinates).
-   The guest window's own dispatch does hit-testing and runs listeners; no callback
-   registry crosses the boundary. Cursor styles flow back as `set_cursor` on the
-   host-homed `SurfaceApi`. Because `ViewApi` handlers run inside the registry's `App`
+   surface has attached: `resize`, `mouse`, `key` (slot-relative logical coordinates),
+   plus `frame` (invariant 8). The guest window's own dispatch does hit-testing and runs
+   listeners; no callback registry crosses the boundary. Cursor styles flow back as
+   `set_cursor` on the host-homed `SurfaceApi`, frame requests as `request_frame`. Because `ViewApi` handlers run inside the registry's `App`
    borrow and GPUI's window callbacks re-enter the app, the view queues events on its
    window and the pump applies them once the borrow is released — same turn, same order.
 8. **Scheduling**: the guest dispatcher queues runnables/timers locally. Every `tick`
-   drains due work, pumps each window's `request_frame` callback (GPUI decides whether
-   a window is dirty; a redraw ends in `PlatformWindow::draw(scene)`, which serializes
-   into the turn's `scenes`), and reports the earliest remaining timer as
-   `wake-after-ms`, which the host schedules. A window is not rendered until the host
-   has pushed its first geometry, so its first frame is at the slot's real size.
+   drains due work and reports the earliest remaining timer as `wake-after-ms`, which
+   the host schedules. Frames are paced by the host's display: a guest window draws
+   only when the host has sent its view a `frame`. GPUI reports frame demand through the
+   window's `frame_waker` and `schedule_frame` (the window became dirty, or a
+   next-frame callback such as an animation's is queued); after the turn's work, a
+   window with demand and no request outstanding calls its surface's `request_frame`
+   once. The host `Surface` records the request and answers it with `frame` the next
+   time it is rendered (`Surface::drive_frame`, called from its prepaint), so a guest
+   draws at most once per host frame and a surface the host does not render does not
+   draw. The tick carrying `frame` runs the window's `request_frame` callback (GPUI
+   runs next-frame callbacks and redraws if dirty; a redraw ends in
+   `PlatformWindow::draw(scene)`, which serializes into the turn's `scenes`); every
+   other tick, including the one carrying the response to `request_frame` itself,
+   draws nothing. Input therefore redraws on the next host frame, not in its own turn.
+   A window is not rendered until the host has pushed its first geometry, so its first
+   paced frame is at the slot's real size; a `frame` that arrives earlier is held until
+   then. (GPUI's `open_window` draws once at the nominal size before any of this.)
 
 ## Status
 

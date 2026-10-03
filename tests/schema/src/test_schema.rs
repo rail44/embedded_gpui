@@ -28,6 +28,14 @@ pub trait TestPlugin {
         cx: &mut gpui::Context<Self>,
     ) -> Ref<ViewProbeApi>;
 
+    /// [`mount`](TestPlugin::mount), with a repeating animation in the view: a window
+    /// that asks for another frame from inside every frame it draws.
+    fn mount_animated(
+        &mut self,
+        surface: Ref<SurfaceApi>,
+        cx: &mut gpui::Context<Self>,
+    ) -> Ref<ViewProbeApi>;
+
     /// Busy-loop for the given wall-clock time: a misbehaving plugin, for the host's
     /// turn budget to catch.
     fn spin(&mut self, millis: u64, cx: &mut gpui::Context<Self>);
@@ -40,6 +48,8 @@ pub trait ViewProbeApi {
     fn last_geometry(&mut self, cx: &mut gpui::Context<Self>) -> Option<Geometry>;
     /// Mouse-down events the view's root element received.
     fn clicks(&mut self, cx: &mut gpui::Context<Self>) -> u32;
+    /// How many times the view's root rendered: one per frame the window drew.
+    fn renders(&mut self, cx: &mut gpui::Context<Self>) -> u32;
     /// Whether the window's root view still exists (it dies when the host drops the
     /// surface and the view is released).
     fn view_alive(&mut self, cx: &mut gpui::Context<Self>) -> bool;

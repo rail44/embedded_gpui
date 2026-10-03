@@ -8,7 +8,8 @@
 //!   addressed to it by object id.
 //! - A [`ViewApi`] object is guest-homed: the thing drawing on a surface. The guest
 //!   opens a GPUI window bound to the surface, shares the view, and calls
-//!   `surface.attach(view)`; the host then drives it with `resize`, `mouse`, and `key`.
+//!   `surface.attach(view)`; the host then drives it with `resize`, `mouse`, and `key`,
+//!   and paces its drawing with `frame`, answering the surface's `request_frame`.
 //!
 //! Both are ordinary objects, so every capability tool applies: an
 //! `Attenuated<ViewApi>` allowing only `resize` is a display-only view, a `Revocable`
@@ -29,6 +30,10 @@ pub trait SurfaceApi {
 
     /// The cursor to show while the pointer is over this surface.
     fn set_cursor(&mut self, cursor: Cursor, cx: &mut gpui::Context<Self>);
+
+    /// The view has something to draw. The host answers with the view's `frame` on
+    /// its next display frame: at most one per host frame, however often this arrives.
+    fn request_frame(&mut self, cx: &mut gpui::Context<Self>);
 }
 
 /// The thing drawing on a surface: a guest window.
@@ -40,6 +45,10 @@ pub trait ViewApi {
     fn mouse(&mut self, event: MouseEvent, cx: &mut gpui::Context<Self>);
 
     fn key(&mut self, event: KeyEvent, cx: &mut gpui::Context<Self>);
+
+    /// A host display frame, answering the surface's `request_frame`: the view may
+    /// draw once now. A view draws only on these.
+    fn frame(&mut self, cx: &mut gpui::Context<Self>);
 }
 
 /// A slot's size in logical pixels plus the window scale factor the view should render

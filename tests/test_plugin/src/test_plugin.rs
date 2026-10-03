@@ -10,9 +10,10 @@ use embedded_gpui::{
 };
 use embedded_gpui_util::Revocable;
 use gpui::{
-    App, Context, Entity, EventEmitter, MouseDownEvent, Task, WeakEntity, Window, div, prelude::*,
-    rgb,
+    Animation, AnimationExt as _, App, Context, Entity, EventEmitter, MouseDownEvent, Task,
+    WeakEntity, Window, div, prelude::*, px, rgb,
 };
+use std::time::Duration;
 use test_schema::{
     ChameleonApi, ChameleonState, CounterMilestone, FactoryApi, GatekeeperApi, ItemApi, ItemInfo,
     TestCounterApi, TestHost, TestHostCaller as _, TestPlugin, VaultApi, ViewProbeApi,
@@ -152,12 +153,33 @@ impl TestPlugin for Root {
     }
 
     fn mount(&mut self, surface: Ref<SurfaceApi>, cx: &mut Context<Self>) -> Ref<ViewProbeApi> {
+        self.mount_view(surface, false, cx)
+    }
+
+    fn mount_animated(
+        &mut self,
+        surface: Ref<SurfaceApi>,
+        cx: &mut Context<Self>,
+    ) -> Ref<ViewProbeApi> {
+        self.mount_view(surface, true, cx)
+    }
+}
+
+impl Root {
+    fn mount_view(
+        &mut self,
+        surface: Ref<SurfaceApi>,
+        animated: bool,
+        cx: &mut Context<Self>,
+    ) -> Ref<ViewProbeApi> {
         let probe = cx.new(|_| ViewProbe { view: None });
         let weak_probe = probe.downgrade();
         let opened = open_view(surface, cx, |_, cx| {
             let view = cx.new(|_| ProbeView {
                 geometry: None,
                 clicks: 0,
+                renders: 0,
+                animated,
             });
             weak_probe
                 .update(cx, |probe, _| probe.view = Some(view.downgrade()))
@@ -177,23 +199,37 @@ impl TestPlugin for Root {
 struct ProbeView {
     geometry: Option<Geometry>,
     clicks: u32,
+    renders: u32,
+    /// Whether the view holds a repeating animation.
+    animated: bool,
 }
 
 impl Render for ProbeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.renders += 1;
         let size = window.viewport_size();
         self.geometry = Some(Geometry {
             width: f32::from(size.width),
             height: f32::from(size.height),
             scale_factor: window.scale_factor(),
         });
-        div().size_full().bg(rgb(0x336699)).on_mouse_down(
-            gpui::MouseButton::Left,
-            cx.listener(|this, _: &MouseDownEvent, _, cx| {
-                this.clicks += 1;
-                cx.notify();
-            }),
-        )
+        div()
+            .size_full()
+            .bg(rgb(0x336699))
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                    this.clicks += 1;
+                    cx.notify();
+                }),
+            )
+            .when(self.animated, |this| {
+                this.child(div().size(px(10.)).bg(rgb(0xffffff)).with_animation(
+                    "pulse",
+                    Animation::new(Duration::from_millis(500)).repeat(),
+                    |this, delta| this.w(px(10. + 40. * delta)),
+                ))
+            })
     }
 }
 
@@ -214,6 +250,14 @@ impl ViewProbeApi for ViewProbe {
             .as_ref()
             .and_then(|view| view.upgrade())
             .map(|view| view.read(cx).clicks)
+            .unwrap_or(0)
+    }
+
+    fn renders(&mut self, cx: &mut Context<Self>) -> u32 {
+        self.view
+            .as_ref()
+            .and_then(|view| view.upgrade())
+            .map(|view| view.read(cx).renders)
             .unwrap_or(0)
     }
 

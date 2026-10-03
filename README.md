@@ -4,7 +4,11 @@
 > `gpui-pre` snapshot family, so an embedder can share one gpui with other
 > crates built against it instead of pulling a second gpui from the zed
 > repository. On top of that: the API follow-ups those snapshots require,
-> and a read-only `Surface::scene_summary()` for windowless tests.
+> a read-only `Surface::scene_summary()` for windowless tests, and frames
+> paced by the host's display (`SurfaceApi::request_frame` / `ViewApi::frame`,
+> with `Surface::drive_frame` as the frame clock for a host that does not
+> render the surface), so a repeating animation advances at most once per
+> host frame instead of spinning.
 > Upstream is [zed-industries/embedded_gpui](https://github.com/zed-industries/embedded_gpui).
 
 **Experimental.** GPUI running *inside* a Wasm component, embedded back into a

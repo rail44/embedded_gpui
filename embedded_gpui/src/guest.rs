@@ -137,7 +137,8 @@ fn runtime_handles() -> Option<(AsyncApp, Rc<PluginPlatform>)> {
     })
 }
 
-/// Drain the guest scheduler and let dirty windows redraw, then report the next wakeup:
+/// Drain the guest scheduler, let windows the host sent a frame redraw, and ask the host
+/// for a frame on behalf of every window with frame demand; then report the next wakeup:
 /// everything queued is drained before this returns, so only the earliest remaining timer
 /// needs a host tick.
 fn pump(platform: &PluginPlatform, async_app: &mut AsyncApp) -> Option<u32> {
@@ -151,6 +152,13 @@ fn pump(platform: &PluginPlatform, async_app: &mut AsyncApp) -> Option<u32> {
         window.pump_frame();
     }
     dispatcher.run_until_idle();
+    for window in platform.window_states() {
+        if window.take_frame_request() {
+            async_app.update(|cx| {
+                window.surface().request_frame(cx);
+            });
+        }
+    }
     if let Some((surface, cursor)) = platform.take_pending_cursor() {
         async_app.update(|cx| {
             surface.set_cursor(cursor, cx);
@@ -187,6 +195,10 @@ impl ViewApi for GuestView {
     fn key(&mut self, event: KeyEvent, _cx: &mut Context<Self>) {
         self.window
             .push_event(WindowEvent::Input(event.to_platform_input()));
+    }
+
+    fn frame(&mut self, _cx: &mut Context<Self>) {
+        self.window.push_event(WindowEvent::Frame);
     }
 }
 
