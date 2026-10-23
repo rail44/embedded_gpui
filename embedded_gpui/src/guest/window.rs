@@ -7,10 +7,10 @@ use anyhow::Result;
 use embedded_gpui::Remote;
 use futures::channel::oneshot;
 use gpui::{
-    Bounds, Capslock, DispatchEventResult, GpuSpecs, Modifiers, Pixels, PlatformAtlas,
-    PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton,
-    PromptLevel, RequestFrameOptions, ScaledPixels, Scene, Size, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowControlArea, point,
+    Bounds, Capslock, DispatchEventResult, FrameRequestSource, GpuSpecs, Modifiers, Pixels,
+    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
+    PromptButton, PromptLevel, RequestFrameOptions, ScaledPixels, Scene, Size, WindowAppearance,
+    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowVisibility, point,
 };
 use raw_window_handle as rwh;
 use std::cell::{Cell, RefCell};
@@ -160,6 +160,10 @@ impl PluginWindowState {
             callback(RequestFrameOptions {
                 require_presentation: false,
                 force_render: false,
+                // The frame came from the host's display, which is this guest's
+                // platform; nothing in it carries a profiler timestamp.
+                signal_at: None,
+                signal_source: FrameRequestSource::NativeCallback,
             });
             self.callbacks.borrow_mut().request_frame = Some(callback);
         }
@@ -368,6 +372,17 @@ impl PlatformWindow for PluginWindow {
     }
 
     fn on_active_status_change(&self, _callback: Box<dyn FnMut(bool)>) {}
+
+    /// The host presents the plugin whenever its slot is on screen; a guest
+    /// window is never hidden on its own, and it only ever has the one
+    /// synthesized display.
+    fn visibility(&self) -> WindowVisibility {
+        WindowVisibility::Visible
+    }
+
+    fn on_visibility_change(&self, _callback: Box<dyn FnMut(WindowVisibility)>) {}
+
+    fn on_display_changed(&self, _callback: Box<dyn FnMut()>) {}
 
     fn on_hover_status_change(&self, _callback: Box<dyn FnMut(bool)>) {}
 

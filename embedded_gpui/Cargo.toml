@@ -25,14 +25,14 @@ getrandom = "0.3"
 # repository branch upstream uses, so an embedder can share a single gpui with
 # other crates built against `gpui-pre`. The snapshots carry the accessor the
 # guest runtime needs (Application::run_embedded). See the fork note in README.md.
-gpui = { package = "gpui-pre", version = "0.3", default-features = false }
+gpui = { package = "gpui-pre", version = "0.3.9", default-features = false }
 embedded_gpui_macros = { path = "../embedded_gpui_macros" }
 log = "0.4"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gpui = { package = "gpui-pre", version = "0.3" }
+gpui = { package = "gpui-pre", version = "0.3.9" }
 image = "0.25"
 smallvec = { version = "1.6", features = ["union", "const_new"] }
 wasmtime = { version = "36", default-features = false, features = [

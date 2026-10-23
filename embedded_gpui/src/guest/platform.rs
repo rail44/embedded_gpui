@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use embedded_gpui::Remote;
 use futures::channel::oneshot;
 use gpui::{
-    Action, AnyWindowHandle, BackgroundExecutor, Bounds, ClipboardItem, CursorStyle,
+    Action, ActivityGuard, AnyWindowHandle, BackgroundExecutor, Bounds, ClipboardItem, CursorStyle,
     DummyKeyboardMapper, ForegroundExecutor, Keymap, Menu, MenuItem, PathPromptOptions, Pixels,
     Platform, PlatformDisplay, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
     PlatformWindow, Point, Task, ThermalState, WindowAppearance, WindowParams, px, size,
@@ -17,6 +17,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// The GPUI [`Platform`] implementation for Wasm plugin guests. There is no real display or
 /// window here: each "window" draws on a host surface object, and all rendering, text
@@ -208,6 +209,20 @@ impl Platform for PluginPlatform {
 
     fn on_system_wake(&self, _callback: Box<dyn FnMut()>) {}
 
+    /// The guest has one synthesized display whose bounds never change, so
+    /// there is nothing to report when the host's displays do.
+    fn on_displays_changed(&self, _callback: Box<dyn FnMut()>) {}
+
+    /// The host owns the process lifecycle: it decides what a sleep means for
+    /// the plugin, and the guest never observes the transition itself.
+    fn on_system_sleep(&self, _callback: Box<dyn FnMut()>) {}
+
+    /// A guest cannot inhibit the host's idle sleep; the host's own window is
+    /// what keeps the machine awake.
+    fn prevent_idle_sleep(&self, _reason: &str) -> Task<Result<ActivityGuard>> {
+        Task::ready(Ok(ActivityGuard::noop()))
+    }
+
     fn set_menus(&self, _menus: Vec<Menu>, _keymap: &Keymap) {}
 
     fn set_dock_menu(&self, _menu: Vec<MenuItem>, _keymap: &Keymap) {}
@@ -320,5 +335,11 @@ impl PlatformDisplay for PluginDisplay {
             origin: Point::default(),
             size: size(px(8192.), px(8192.)),
         }
+    }
+
+    /// The host paces the plugin: frames arrive when the host's display draws,
+    /// so the guest has no refresh rate of its own to report.
+    fn refresh_interval(&self) -> Option<Duration> {
+        None
     }
 }

@@ -340,12 +340,15 @@ fn fabricate_tile(
 impl PlatformAtlas for PluginAtlas {
     fn get_or_insert_with<'a>(
         &self,
-        key: &AtlasKey,
+        key: AtlasKey,
         build: &mut dyn FnMut() -> Result<Option<(Size<DevicePixels>, Cow<'a, [u8]>)>>,
     ) -> Result<Option<AtlasTile>> {
-        if let Some(tile) = lock(&self.state).tiles.get(key) {
+        if let Some(tile) = lock(&self.state).tiles.get(&key) {
             return Ok(Some(*tile));
         }
+        // GPUI hands the key over by value as of gpui-pre 0.3.9; the body below
+        // only reads it and clones it into the tile map, so it works off a borrow.
+        let key = &key;
         match key {
             // Glyphs stay symbolic: the host shapes and rasterizes them, so the build
             // callback (which would call rasterize_glyph) is never invoked.
