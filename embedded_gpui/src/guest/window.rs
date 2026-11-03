@@ -180,7 +180,7 @@ impl PluginWindowState {
             PlatformInput::MouseDown(event) => self.mouse_position.set(event.position),
             PlatformInput::MouseUp(event) => self.mouse_position.set(event.position),
             PlatformInput::MouseMove(event) => self.mouse_position.set(event.position),
-            PlatformInput::ScrollWheel(event) => self.mouse_position.set(event.position),
+            PlatformInput::Scroll(event) => self.mouse_position.set(event.position),
             _ => {}
         }
         let callback = self.callbacks.borrow_mut().input.take();

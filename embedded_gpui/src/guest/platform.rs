@@ -8,8 +8,9 @@ use futures::channel::oneshot;
 use gpui::{
     Action, ActivityGuard, AnyWindowHandle, BackgroundExecutor, Bounds, ClipboardItem, CursorStyle,
     DummyKeyboardMapper, ForegroundExecutor, Keymap, Menu, MenuItem, PathPromptOptions, Pixels,
-    Platform, PlatformDisplay, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
-    PlatformWindow, Point, Task, ThermalState, WindowAppearance, WindowParams, px, size,
+    OperatingSystem, Platform, PlatformDisplay, PlatformInfo, PlatformKeyboardLayout,
+    PlatformKeyboardMapper, PlatformTarget, PlatformTextSystem, PlatformWindow, Point, Task,
+    ThermalState, WindowAppearance, WindowParams, px, size,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -99,6 +100,16 @@ impl PluginPlatform {
 }
 
 impl Platform for PluginPlatform {
+    fn platform_info(&self) -> PlatformInfo {
+        // A WASI guest cannot see the host's operating system, and it runs inside a native
+        // host rather than a browser. `Unknown` keeps `secondary-` and other OS-specific
+        // keystroke spellings resolving the way a non-macOS host does.
+        PlatformInfo {
+            os: OperatingSystem::Unknown,
+            target: PlatformTarget::Native,
+        }
+    }
+
     fn background_executor(&self) -> BackgroundExecutor {
         self.background_executor.clone()
     }

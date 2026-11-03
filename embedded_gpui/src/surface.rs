@@ -258,7 +258,7 @@ impl MouseEvent {
                 pressed_button: event.pressed_button.and_then(MouseButton::from_gpui),
                 modifiers: Modifiers::from_gpui(event.modifiers),
             }),
-            gpui::PlatformInput::ScrollWheel(event) => {
+            gpui::PlatformInput::Scroll(event) => {
                 let (delta_x, delta_y, precise) = match event.delta {
                     gpui::ScrollDelta::Pixels(delta) => {
                         (f32::from(delta.x), f32::from(delta.y), true)
@@ -298,7 +298,7 @@ impl MouseEvent {
                 pressed_button: event.pressed_button.map(MouseButton::to_gpui),
                 modifiers: event.modifiers.to_gpui(),
             }),
-            Self::Scroll(event) => gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+            Self::Scroll(event) => gpui::PlatformInput::Scroll(gpui::ScrollEvent {
                 position: event.position.to_gpui(),
                 delta: if event.precise {
                     gpui::ScrollDelta::Pixels(gpui::point(
@@ -310,6 +310,7 @@ impl MouseEvent {
                 },
                 modifiers: event.modifiers.to_gpui(),
                 touch_phase: Default::default(),
+                source: gpui::ScrollSource::Pointer,
             }),
         }
     }

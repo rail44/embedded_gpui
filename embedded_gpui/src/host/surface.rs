@@ -6,7 +6,7 @@
 use gpui::{
     App, Bounds, BoxShadow, ContentMask, Context, Corners, Edges, FocusHandle, IntoElement,
     KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, PlatformInput, Point, Render, ScrollWheelEvent, Size, UnderlineStyle, Window, canvas,
+    Pixels, PlatformInput, Point, Render, ScrollEvent, Size, UnderlineStyle, Window, canvas,
     div, point, prelude::*, px,
 };
 
@@ -231,8 +231,8 @@ impl Render for Surface {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
                 this.forward_mouse(PlatformInput::MouseMove(event.clone()), cx);
             }))
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _window, cx| {
-                this.forward_mouse(PlatformInput::ScrollWheel(event.clone()), cx);
+            .on_scroll(cx.listener(|this, event: &ScrollEvent, _window, cx| {
+                this.forward_mouse(PlatformInput::Scroll(event.clone()), cx);
             }))
             .child(
                 canvas(
